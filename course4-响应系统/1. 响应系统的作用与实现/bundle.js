@@ -1,27 +1,29 @@
-<body></body>
-<script>
+var xys = (function (exports) {
+  'use strict';
+
   // 存储副作用函数的桶
   const bucket = new WeakMap();
 
-  // 原始数据
-  const data = { foo: 1, bar: 2 };
   // 对原始数据的代理
-  const obj = new Proxy(data, {
-    // 拦截读取操作
-    get(target, key) {
-      // 将副作用函数 activeEffect 添加到存储副作用函数的桶中
-      track(target, key);
-      // 返回属性值
-      return target[key];
-    },
-    // 拦截设置操作
-    set(target, key, newVal) {
-      // 设置属性值
-      target[key] = newVal;
-      // 把副作用函数从桶里取出并执行
-      trigger(target, key);
-    },
-  });
+
+  function reactive(obj) {
+    return new Proxy(obj, {
+      // 拦截读取操作
+      get(target, key) {
+        // 将副作用函数 activeEffect 添加到存储副作用函数的桶中
+        track(target, key);
+        // 返回属性值
+        return target[key];
+      },
+      // 拦截设置操作
+      set(target, key, newVal) {
+        // 设置属性值
+        target[key] = newVal;
+        // 把副作用函数从桶里取出并执行
+        trigger(target, key);
+      },
+    });
+  }
 
   function track(target, key) {
     if (!activeEffect) return;
@@ -184,38 +186,12 @@
     return obj;
   }
 
-  const sumRes = computed(() => obj.foo + obj.bar);
+  exports.computed = computed;
+  exports.reactive = reactive;
+  exports.watch = watch;
 
-  console.log(sumRes.value);
-  console.log(sumRes.value);
+  Object.defineProperty(exports, '__esModule', { value: true });
 
-  obj.foo++;
+  return exports;
 
-  console.log(sumRes.value);
-
-  effect(() => {
-    console.log(
-      "这是自动响应的effect, 当computed所依赖的值发生变化时就会响应",
-      sumRes.value
-    );
-  });
-
-  watch(
-    () => obj.foo,
-    (newVal, oldVal) => {
-      console.log("obj.foo数据变化了", newVal, oldVal);
-    },
-    {
-      immediate: true,
-      flush: true,
-    }
-  );
-  watch(obj, (newVal, oldVal) => {
-    console.log(newVal, oldVal);
-    console.log("obj数据变化了");
-  });
-
-  obj.foo++;
-  obj.foo++;
-  obj.foo++;
-</script>
+})({});
