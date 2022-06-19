@@ -12,7 +12,18 @@
     const { reactive, watch, computed } = xys;
     const obj = reactive({
       a: 1,
+      b: 2,
     });
+    const cObj = computed(() => {
+      return obj.a + obj.b;
+    });
+    watch(
+      () => cObj.value,
+      (val) => {
+        console.log("监控comupted", val);
+      }
+    );
+
     watch(
       () => obj.a,
       (newVal, oldVal) => {

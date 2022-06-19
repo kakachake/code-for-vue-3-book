@@ -123,6 +123,7 @@ var xys = (function (exports) {
         if (typeof getter === "function") {
           return getter();
         } else if (typeof getter === "object") {
+          console.log(getter);
           return traverse(getter);
         }
       },

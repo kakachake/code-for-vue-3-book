@@ -1,23 +1,27 @@
 // 存储副作用函数的桶
 const bucket = new WeakMap();
-
+const ITERATE_KEY = Symbol("iterate");
 // 对原始数据的代理
 
 export function reactive(obj) {
   return new Proxy(obj, {
     // 拦截读取操作
-    get(target, key) {
+    get(target, key, receiver) {
       // 将副作用函数 activeEffect 添加到存储副作用函数的桶中
       track(target, key);
       // 返回属性值
-      return target[key];
+      return Reflect.get(target, key, receiver);
     },
     // 拦截设置操作
-    set(target, key, newVal) {
+    set(target, key, newVal, receiver) {
       // 设置属性值
-      target[key] = newVal;
+      Reflect.set(target, key, newVal, receiver);
       // 把副作用函数从桶里取出并执行
       trigger(target, key);
+    },
+    has(target, key) {
+      track(target, key);
+      return Reflect.has(target, key);
     },
   });
 }
@@ -120,6 +124,7 @@ export function watch(getter, fn, options) {
       if (typeof getter === "function") {
         return getter();
       } else if (typeof getter === "object") {
+        console.log(getter);
         return traverse(getter);
       }
     },
