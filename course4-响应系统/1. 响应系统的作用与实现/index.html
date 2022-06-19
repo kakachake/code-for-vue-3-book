@@ -5,11 +5,11 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Document</title>
-    <script src="./bundle.js"></script>
+    <script src="./dist/bundle.iife.js"></script>
   </head>
   <body></body>
   <script>
-    const { reactive, watch, computed } = xys;
+    const { reactive, watch, computed, effect } = xys;
     const obj = reactive({
       a: 1,
       b: 2,
@@ -30,6 +30,13 @@
         console.log(newVal, oldVal);
       }
     );
+
+    effect(() => {
+      for (i in obj) {
+        console.log(i);
+      }
+    });
+    obj.c = 1;
     obj.a++;
     obj.a++;
     obj.a++;

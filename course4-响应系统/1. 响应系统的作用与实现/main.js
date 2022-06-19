@@ -1,8 +1,14 @@
 // 存储副作用函数的桶
 const bucket = new WeakMap();
 const ITERATE_KEY = Symbol("iterate");
-// 对原始数据的代理
 
+const TriggerType = {
+  SET: "SET",
+  ADD: "ADD",
+  DELETE: "DELETE",
+};
+
+// 对原始数据的代理
 export function reactive(obj) {
   return new Proxy(obj, {
     // 拦截读取操作
@@ -14,14 +20,29 @@ export function reactive(obj) {
     },
     // 拦截设置操作
     set(target, key, newVal, receiver) {
+      const type = Object.prototype.hasOwnProperty.call(target, key)
+        ? TriggerType.SET
+        : TriggerType.ADD;
       // 设置属性值
       Reflect.set(target, key, newVal, receiver);
       // 把副作用函数从桶里取出并执行
-      trigger(target, key);
+      trigger(target, key, type);
     },
     has(target, key) {
       track(target, key);
       return Reflect.has(target, key);
+    },
+    ownKeys(target) {
+      track(target, ITERATE_KEY);
+      return Reflect.ownKeys(target);
+    },
+    deleteProperty(target, key) {
+      const hasKey = Object.prototype.hasOwnProperty.call(target, key);
+      const res = Reflect.deleteProperty(target, key);
+      if (res && hasKey) {
+        trigger(target, key, TriggerType.DELETE);
+      }
+      return res;
     },
   });
 }
@@ -40,10 +61,11 @@ function track(target, key) {
   activeEffect.deps.push(deps);
 }
 
-function trigger(target, key) {
+function trigger(target, key, type) {
   const depsMap = bucket.get(target);
   if (!depsMap) return;
   const effects = depsMap.get(key);
+  const iterateEffects = depsMap.get(ITERATE_KEY);
 
   const effectsToRun = new Set();
   effects &&
@@ -52,6 +74,16 @@ function trigger(target, key) {
         effectsToRun.add(effectFn);
       }
     });
+
+  if (type === TriggerType.ADD || type === TriggerType.DELETE) {
+    iterateEffects &&
+      iterateEffects.forEach((effectFn) => {
+        if (effectFn != activeEffect) {
+          effectsToRun.add(effectFn);
+        }
+      });
+  }
+
   effectsToRun.forEach((effectFn) => {
     if (effectFn.options.scheduler) {
       effectFn.options.scheduler(effectFn);
@@ -67,7 +99,7 @@ let activeEffect;
 // effect 栈
 const effectStack = [];
 
-function effect(fn, options = {}) {
+export function effect(fn, options = {}) {
   const effectFn = () => {
     cleanup(effectFn);
     // 当调用 effect 注册副作用函数时，将副作用函数复制给 activeEffect
