@@ -2,6 +2,27 @@
 const bucket = new WeakMap();
 const ITERATE_KEY = Symbol("iterate");
 const RAW_KEY = Symbol("row");
+const reactiveMap = new Map();
+
+const arrayInstrumentations = {};
+
+// 针对数组查找的方法，由于用户可能使用代理后的元素，也可能使用未被代理的元素，故需要重写以下方法
+["includes", "indexOf", "lastIndexOf"].forEach((method) => {
+  // 先获取到原始的方法
+  const originMethod = Array.prototype[method];
+  arrayInstrumentations[method] = function (...args) {
+    // 首先在代理对象中查找
+    const res = originMethod.apply(this, args);
+
+    // 如果不存在，则在原始对象中查找
+    if (res === false || res === -1) {
+      res = originMethod.apply(this[RAW_KEY], args);
+    }
+
+    // 返回最终的结果
+    return res;
+  };
+});
 
 const TriggerType = {
   SET: "SET",
@@ -16,11 +37,16 @@ export function createReactive(obj, isShallow = false, isReadonly = false) {
     get(target, key, receiver) {
       // 代理对象可以通过RAW_KEY获取到原始数据
       // 如：child[RAW_KEY] === obj
-
       if (key === RAW_KEY) {
         return target;
       }
-      if (!isReadonly) {
+
+      if (Array.isArray(target) && arrayInstrumentations.hasOwnProperty(key)) {
+        console.log(key);
+        return Reflect.get(arrayInstrumentations, key, receiver);
+      }
+
+      if (!isReadonly && typeof key !== "symbol") {
         // 将副作用函数 activeEffect 添加到存储副作用函数的桶中
         track(target, key);
       }
@@ -94,7 +120,17 @@ export function createReactive(obj, isShallow = false, isReadonly = false) {
 
 // 深层响应
 export function reactive(obj) {
-  return createReactive(obj);
+  // 优先通过原始对象 obj 寻找之前创建的代理对象，如果找到了，直接返回已经代理的对象
+  const existProxy = reactiveMap.get(obj);
+  if (existProxy) {
+    return existProxy;
+  }
+
+  // 否则，创建新的代理对象
+  const proxy = createReactive(obj);
+  // 存储在map中，从而避免重复创建
+  reactiveMap.set(obj, proxy);
+  return proxy;
 }
 
 // 浅层响应
@@ -166,7 +202,7 @@ function trigger(target, key, type, newVal) {
     // 对于所有索引大于或等于length值的元素
     // 需要把所有相关联的副作用函数取出并添加到effectsToRun中待执行
     depsMap.forEach((effects, key) => {
-      if (key >= newVal) {
+      if (typeof key !== "symbol" && key >= newVal) {
         effects.forEach((effectFn) => {
           if (effectFn !== activeEffect) {
             effectsToRun.add(effectFn);
