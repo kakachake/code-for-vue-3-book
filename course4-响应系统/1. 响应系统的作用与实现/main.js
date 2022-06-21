@@ -1,6 +1,7 @@
 // 存储副作用函数的桶
 const bucket = new WeakMap();
 const ITERATE_KEY = Symbol("iterate");
+const RAW_KEY = Symbol("row");
 
 const TriggerType = {
   SET: "SET",
@@ -9,31 +10,75 @@ const TriggerType = {
 };
 
 // 对原始数据的代理
-export function reactive(obj) {
+export function createReactive(obj, isShallow = false, isReadonly = false) {
   return new Proxy(obj, {
     // 拦截读取操作
     get(target, key, receiver) {
-      // 将副作用函数 activeEffect 添加到存储副作用函数的桶中
-      track(target, key);
+      // 代理对象可以通过RAW_KEY获取到原始数据
+      // 如：child[RAW_KEY] === obj
+
+      if (key === RAW_KEY) {
+        return target;
+      }
+      if (!isReadonly) {
+        // 将副作用函数 activeEffect 添加到存储副作用函数的桶中
+        track(target, key);
+      }
+
+      const res = Reflect.get(target, key, receiver);
+      // 如果是浅响应，则直接返回res，注意此时的res是非响应式的
+      // console.log(isShallow);
+      if (isShallow) {
+        return res;
+      }
+
+      //如果是深响应，则递归将res变为响应式
+      if (typeof res === "object" && res !== null) {
+        // 递归调用reactive将结果包装成响应式数据并返回
+
+        return isReadonly ? readonly(res) : reactive(res);
+      }
+
       // 返回属性值
-      return Reflect.get(target, key, receiver);
+      return res;
     },
     // 拦截设置操作
     set(target, key, newVal, receiver) {
-      const type = Object.prototype.hasOwnProperty.call(target, key)
+      if (isReadonly) {
+        console.warn(`属性${key}是只读的`);
+        return true;
+      }
+      // console.log("proxy.set：", "原始对象obj：", target);
+      // console.log("proxy.set：", "代理对象child：", receiver);
+      // 先获取旧值
+      const oldVal = target[key];
+
+      const type = Array.isArray(target)
+        ? Number(key) < target.length
+          ? TriggerType.SET
+          : TriggerType.ADD
+        : Object.prototype.hasOwnProperty.call(target, key)
         ? TriggerType.SET
         : TriggerType.ADD;
       // 设置属性值
-      Reflect.set(target, key, newVal, receiver);
+      const res = Reflect.set(target, key, newVal, receiver);
       // 把副作用函数从桶里取出并执行
-      trigger(target, key, type);
+      // target === receiver[RAW_KEY]说明就是target的代理对象
+      if (target === receiver[RAW_KEY]) {
+        // 比较新值和旧值，只有当他们不全等，且都不是NaN时才触发响应
+        // NaN === NaN // false
+        if (oldVal !== newVal && (oldVal === oldVal || newVal === newVal)) {
+          trigger(target, key, type, newVal);
+        }
+      }
+      return res;
     },
     has(target, key) {
       track(target, key);
       return Reflect.has(target, key);
     },
     ownKeys(target) {
-      track(target, ITERATE_KEY);
+      track(target, Array.isArray(target) ? "length" : ITERATE_KEY);
       return Reflect.ownKeys(target);
     },
     deleteProperty(target, key) {
@@ -45,6 +90,26 @@ export function reactive(obj) {
       return res;
     },
   });
+}
+
+// 深层响应
+export function reactive(obj) {
+  return createReactive(obj);
+}
+
+// 浅层响应
+export function shallowReactive(obj) {
+  return createReactive(obj, true);
+}
+
+// 深层只读
+export function readonly(obj) {
+  return createReactive(obj, false, true);
+}
+
+//浅层只读
+export function shallowReadonly(obj) {
+  return createReactive(obj, true, true);
 }
 
 function track(target, key) {
@@ -61,7 +126,8 @@ function track(target, key) {
   activeEffect.deps.push(deps);
 }
 
-function trigger(target, key, type) {
+function trigger(target, key, type, newVal) {
+  // 获取target的依赖
   const depsMap = bucket.get(target);
   if (!depsMap) return;
   const effects = depsMap.get(key);
@@ -75,6 +141,7 @@ function trigger(target, key, type) {
       }
     });
 
+  // 只有添加和删除操作才会改变对象的keys，故此时需要触发iterateEffects
   if (type === TriggerType.ADD || type === TriggerType.DELETE) {
     iterateEffects &&
       iterateEffects.forEach((effectFn) => {
@@ -82,6 +149,31 @@ function trigger(target, key, type) {
           effectsToRun.add(effectFn);
         }
       });
+  }
+
+  // 如果TriggerType === ADD, 并且target是数组，说明数组的长度发生变化，则需要把数组的length也触发
+  if (type === TriggerType.ADD && Array.isArray(target)) {
+    const lengthEffects = depsMap.get("length");
+    lengthEffects &&
+      lengthEffects.forEach((effectFn) => {
+        if (effectFn != activeEffect) {
+          effectsToRun.add(effectFn);
+        }
+      });
+  }
+
+  if (Array.isArray(target) && key === "length") {
+    // 对于所有索引大于或等于length值的元素
+    // 需要把所有相关联的副作用函数取出并添加到effectsToRun中待执行
+    depsMap.forEach((effects, key) => {
+      if (key >= newVal) {
+        effects.forEach((effectFn) => {
+          if (effectFn !== activeEffect) {
+            effectsToRun.add(effectFn);
+          }
+        });
+      }
+    });
   }
 
   effectsToRun.forEach((effectFn) => {

@@ -9,7 +9,15 @@
   </head>
   <body></body>
   <script>
-    const { reactive, watch, computed, effect } = xys;
+    const {
+      reactive,
+      watch,
+      computed,
+      effect,
+      shallowReactive,
+      readonly,
+      shallowReadonly,
+    } = xys;
     const obj = reactive({
       a: 1,
       b: 2,
@@ -17,6 +25,7 @@
     const cObj = computed(() => {
       return obj.a + obj.b;
     });
+    console.log("=============test1===================");
     watch(
       () => cObj.value,
       (val) => {
@@ -40,5 +49,97 @@
     obj.a++;
     obj.a++;
     obj.a++;
+    console.log("===========test1 End===============");
+
+    console.log("=============test2===================");
+    const obj2 = reactive({
+      a: 1,
+      b: 2,
+    });
+    effect(() => {
+      console.log(obj2.a);
+    });
+    obj2.a = 1;
+    console.log("===========test2 End===============");
+
+    console.log("===========test3 Start===============");
+    const child = reactive({
+      name: "child",
+    });
+    const parent = reactive({
+      bar: 1,
+    });
+    Object.setPrototypeOf(child, parent);
+    console.log(child);
+    effect(() => {
+      console.log(child.bar);
+    });
+    child.bar = 2;
+    console.log("===========test3 End===============");
+
+    console.log("===========5.5浅响应与深响应 Start===============");
+    const obj4 = reactive({
+      a: {
+        b: 1,
+      },
+    });
+    console.log("effect触发了两次，深层响应可以触发");
+    effect(() => {
+      console.log(obj4);
+      console.log(obj4.a.b);
+    });
+    obj4.a.b = 2;
+    const obj5 = shallowReactive({
+      a: {
+        b: 1,
+      },
+    });
+    console.log("effect只触发了一次，深层响应不会触发");
+    effect(() => {
+      console.log(obj5);
+      console.log(obj5.a.b);
+    });
+    obj5.a.b = 2;
+    console.log("===========5.5浅响应与深响应 End===============");
+
+    console.log("===========5.6 只读和浅只读 Start===============");
+    const obj6 = readonly({
+      a: {
+        b: 2,
+      },
+      c: 2,
+    });
+    console.log(obj6);
+    obj6.c = 7; // warn：属性a是只读的
+    obj6.a.b = 8;
+    const obj7 = shallowReadonly({
+      a: {
+        b: 2,
+      },
+      c: 2,
+    });
+    console.log(obj7);
+    obj7.c = 7; // warn：属性a是只读的
+    obj7.a.b = 8; // 这个可以改变
+    console.log("===========5.6 只读和浅只读 End===============");
+
+    console.log("=============5.7 代理数组 start======================");
+    const arr = reactive([1]);
+    effect(() => {
+      console.log("数组长度发生改变：", arr.length);
+    });
+    effect(() => {
+      console.log(arr[0]); // undefined
+    });
+    effect(() => {
+      console.log(">>>>>>>>>>>数组遍历开始");
+      for (key in arr) {
+        console.log("数组key遍历：", key);
+      }
+      console.log(">>>>>>>>>>>数组遍历结束");
+    });
+    arr[1] = 2;
+    arr.length = 0;
+    console.log("=============5.7 代理数组 End======================");
   </script>
 </html>
