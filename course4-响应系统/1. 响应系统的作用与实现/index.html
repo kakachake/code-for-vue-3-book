@@ -152,6 +152,14 @@
 
     console.log(arr1.includes(arr1[0])); // true
     console.log(arr1.includes(obj9)); //
+
+    const arr2 = reactive([]);
+    effect(() => {
+      arr2.push(1);
+    });
+    effect(() => {
+      arr2.push(1);
+    });
     console.log("=============5.7 代理数组 End======================");
   </script>
 </html>

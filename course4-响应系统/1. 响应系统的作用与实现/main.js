@@ -3,8 +3,23 @@ const bucket = new WeakMap();
 const ITERATE_KEY = Symbol("iterate");
 const RAW_KEY = Symbol("row");
 const reactiveMap = new Map();
-
+// 标记变量，代表是否进行追踪。默认值为true，即允许追踪
+let shoudTrack = true;
 const arrayInstrumentations = {};
+
+["push", "shift", "pop", "unshift", "splice"].forEach((method) => {
+  // 取得原始的方法
+  const originMethod = Array.prototype[method];
+  // 重写
+  arrayInstrumentations[method] = function (...args) {
+    // 停止追踪
+    shoudTrack = false;
+    let res = originMethod.call(this, args);
+    // 在调用原始方法之后，恢复追踪，即允许追踪
+    shoudTrack = true;
+    return res;
+  };
+});
 
 // 针对数组查找的方法，由于用户可能使用代理后的元素，也可能使用未被代理的元素，故需要重写以下方法
 ["includes", "indexOf", "lastIndexOf"].forEach((method) => {
@@ -12,7 +27,7 @@ const arrayInstrumentations = {};
   const originMethod = Array.prototype[method];
   arrayInstrumentations[method] = function (...args) {
     // 首先在代理对象中查找
-    const res = originMethod.apply(this, args);
+    let res = originMethod.apply(this, args);
 
     // 如果不存在，则在原始对象中查找
     if (res === false || res === -1) {
@@ -42,7 +57,6 @@ export function createReactive(obj, isShallow = false, isReadonly = false) {
       }
 
       if (Array.isArray(target) && arrayInstrumentations.hasOwnProperty(key)) {
-        console.log(key);
         return Reflect.get(arrayInstrumentations, key, receiver);
       }
 
@@ -149,7 +163,7 @@ export function shallowReadonly(obj) {
 }
 
 function track(target, key) {
-  if (!activeEffect) return;
+  if (!activeEffect || !shoudTrack) return;
   let depsMap = bucket.get(target);
   if (!depsMap) {
     bucket.set(target, (depsMap = new Map()));
